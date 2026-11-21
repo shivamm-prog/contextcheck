@@ -5,6 +5,9 @@ import com.contextcheck.app.data.local.AppPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
+import retrofit2.HttpException
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -35,20 +38,112 @@ class ContextCheckRepository(
     suspend fun register(req: UserRegisterRequest): Result<TokenResponse> {
         return try {
             val res = api.register(req)
-            preferences.saveAuthToken(res.accessToken, res.username, res.email, res.userId)
+            preferences.saveAuthToken(
+                res.accessToken,
+                res.username,
+                res.email,
+                res.userId
+            )
             Result.success(res)
+        } catch (e: HttpException) {
+            val errorMessage = extractApiError(e)
+            Result.failure(Exception("Registration failed: $errorMessage", e))
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(
+                Exception(
+                    "Registration failed: ${e.message ?: "Unknown error"}",
+                    e
+                )
+            )
         }
     }
 
     suspend fun login(req: UserLoginRequest): Result<TokenResponse> {
         return try {
             val res = api.login(req)
-            preferences.saveAuthToken(res.accessToken, res.username, res.email, res.userId)
+            preferences.saveAuthToken(
+                res.accessToken,
+                res.username,
+                res.email,
+                res.userId
+            )
             Result.success(res)
+        } catch (e: HttpException) {
+            val errorMessage = extractApiError(e)
+            Result.failure(Exception("Login failed: $errorMessage", e))
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(
+                Exception(
+                    "Login failed: ${e.message ?: "Unknown error"}",
+                    e
+                )
+            )
+        }
+    }
+
+    /**
+     * Extracts useful validation/error information from FastAPI responses.
+     *
+     * FastAPI validation errors usually look like:
+     * {
+     *   "detail": [
+     *     {
+     *       "loc": ["body", "email"],
+     *       "msg": "value is not a valid email address",
+     *       "type": "value_error"
+     *     }
+     *   ]
+     * }
+     */
+    private fun extractApiError(exception: HttpException): String {
+        return try {
+            val errorBody = exception.response()?.errorBody()?.string()
+
+            if (errorBody.isNullOrBlank()) {
+                return "Server returned HTTP ${exception.code()}"
+            }
+
+            val json = JSONObject(errorBody)
+
+            if (!json.has("detail")) {
+                return errorBody
+            }
+
+            val detail = json.get("detail")
+
+            // FastAPI validation errors are normally an array
+            if (detail is JSONArray) {
+                val messages = mutableListOf<String>()
+
+                for (i in 0 until detail.length()) {
+                    val item = detail.optJSONObject(i)
+
+                    if (item != null) {
+                        val location = item.optJSONArray("loc")
+                        val message = item.optString("msg", "Invalid value")
+
+                        val field = if (location != null && location.length() > 1) {
+                            location.optString(location.length() - 1)
+                        } else {
+                            "field"
+                        }
+
+                        messages.add("$field: $message")
+                    } else {
+                        messages.add(detail.optString(i))
+                    }
+                }
+
+                if (messages.isNotEmpty()) {
+                    return messages.joinToString("\n")
+                }
+            }
+
+            // Some backend errors may return detail as a simple string
+            detail.toString()
+
+        } catch (parseException: Exception) {
+            "Server returned HTTP ${exception.code()}"
         }
     }
 
@@ -66,12 +161,19 @@ class ContextCheckRepository(
                 claimedLocation = claimedLocation,
                 sourcePlatform = "WhatsApp"
             )
+
             val res = api.verifyText(getAuthHeader(), req)
             _currentVerification.value = res
             Result.success(res)
+
         } catch (e: Exception) {
             // Local fallback simulation for demo resilience if backend is temporarily offline
-            val fallback = createFallbackVerification(content, claimedDate, claimedLocation)
+            val fallback = createFallbackVerification(
+                content,
+                claimedDate,
+                claimedLocation
+            )
+
             _currentVerification.value = fallback
             Result.success(fallback)
         }
@@ -90,11 +192,19 @@ class ContextCheckRepository(
                 claimedDate = claimedDate,
                 claimedLocation = claimedLocation
             )
+
             val res = api.verifyImage(getAuthHeader(), req)
             _currentVerification.value = res
             Result.success(res)
+
         } catch (e: Exception) {
-            val fallback = createFallbackVerification(caption, claimedDate, claimedLocation, "IMAGE")
+            val fallback = createFallbackVerification(
+                caption,
+                claimedDate,
+                claimedLocation,
+                "IMAGE"
+            )
+
             _currentVerification.value = fallback
             Result.success(fallback)
         }
@@ -113,11 +223,19 @@ class ContextCheckRepository(
                 claimedDate = claimedDate,
                 claimedLocation = claimedLocation
             )
+
             val res = api.verifyVideo(getAuthHeader(), req)
             _currentVerification.value = res
             Result.success(res)
+
         } catch (e: Exception) {
-            val fallback = createFallbackVerification(caption, claimedDate, claimedLocation, "VIDEO")
+            val fallback = createFallbackVerification(
+                caption,
+                claimedDate,
+                claimedLocation,
+                "VIDEO"
+            )
+
             _currentVerification.value = fallback
             Result.success(fallback)
         }
@@ -132,11 +250,19 @@ class ContextCheckRepository(
                 transcriptText = transcriptText,
                 contextNote = contextNote
             )
+
             val res = api.verifyAudio(getAuthHeader(), req)
             _currentVerification.value = res
             Result.success(res)
+
         } catch (e: Exception) {
-            val fallback = createFallbackVerification(transcriptText ?: contextNote ?: "Audio note", null, null, "AUDIO")
+            val fallback = createFallbackVerification(
+                transcriptText ?: contextNote ?: "Audio note",
+                null,
+                null,
+                "AUDIO"
+            )
+
             _currentVerification.value = fallback
             Result.success(fallback)
         }
@@ -146,6 +272,7 @@ class ContextCheckRepository(
         return try {
             val list = api.getHistory(getAuthHeader())
             Result.success(list)
+
         } catch (e: Exception) {
             // If offline, provide pre-seeded hackathon demo list
             Result.success(createDefaultDemoHistory())
@@ -154,10 +281,21 @@ class ContextCheckRepository(
 
     suspend fun deleteHistoryItem(id: Int): Result<HistoryDeleteResponse> {
         return try {
-            val res = api.deleteHistoryItem(id, getAuthHeader())
+            val res = api.deleteHistoryItem(
+                id,
+                getAuthHeader()
+            )
+
             Result.success(res)
+
         } catch (e: Exception) {
-            Result.success(HistoryDeleteResponse("success", id, "Deleted locally"))
+            Result.success(
+                HistoryDeleteResponse(
+                    "success",
+                    id,
+                    "Deleted locally"
+                )
+            )
         }
     }
 
@@ -165,8 +303,15 @@ class ContextCheckRepository(
         return try {
             val res = api.clearAllHistory(getAuthHeader())
             Result.success(res)
+
         } catch (e: Exception) {
-            Result.success(HistoryDeleteResponse("success", null, "Cleared locally"))
+            Result.success(
+                HistoryDeleteResponse(
+                    "success",
+                    null,
+                    "Cleared locally"
+                )
+            )
         }
     }
 
@@ -183,11 +328,22 @@ class ContextCheckRepository(
         claimedLocation: String?,
         type: String = "TEXT"
     ): VerificationResponse {
+
         val lower = text.lowercase()
-        val isoTimestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())
+
+        val isoTimestamp =
+            SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss",
+                Locale.US
+            ).format(Date())
 
         return when {
-            lower.contains("pune") || lower.contains("पूर") || lower.contains("flood") || lower.contains("पुण्यातला") -> {
+
+            lower.contains("pune") ||
+                    lower.contains("पूर") ||
+                    lower.contains("flood") ||
+                    lower.contains("पुण्यातला") -> {
+
                 VerificationResponse(
                     id = 2,
                     verdict = "MISLEADING CONTEXT",
@@ -203,19 +359,39 @@ class ContextCheckRepository(
                         "Regional Meteorological Centre, Pune - Daily Bulletin",
                         "Broadcast News Archive (Sept 2019 Katraj Incident)"
                     ),
-                    dateComparison = "Claimed: Today / Current | Evidence: September 26, 2019 (Historical)",
-                    locationComparison = "Claimed: Pune | Evidence: Katraj, Pune (2019 Archive)",
-                    contextComparison = "REAL MEDIA, FALSE CONTEXT: Genuine flood footage repurposed to falsely depict current weather conditions.",
+                    dateComparison =
+                        "Claimed: Today / Current | Evidence: September 26, 2019 (Historical)",
+                    locationComparison =
+                        "Claimed: Pune | Evidence: Katraj, Pune (2019 Archive)",
+                    contextComparison =
+                        "REAL MEDIA, FALSE CONTEXT: Genuine flood footage repurposed to falsely depict current weather conditions.",
                     recommendedAction = "DON'T FORWARD",
-                    language = if (lower.contains("पुण्यातला") || lower.contains("आहे")) "Mixed (Marathi-English)" else "English",
-                    entities = listOf("Location: Pune", "Date: Today"),
-                    suspiciousSignals = listOf("Recycled catastrophic footage circulated during monsoon"),
+                    language =
+                        if (
+                            lower.contains("पुण्यातला") ||
+                            lower.contains("आहे")
+                        ) {
+                            "Mixed (Marathi-English)"
+                        } else {
+                            "English"
+                        },
+                    entities = listOf(
+                        "Location: Pune",
+                        "Date: Today"
+                    ),
+                    suspiciousSignals = listOf(
+                        "Recycled catastrophic footage circulated during monsoon"
+                    ),
                     contentType = type,
                     isDemo = true,
                     timestamp = isoTimestamp
                 )
             }
-            lower.contains("recharge") || lower.contains("योजना") || lower.contains("free") -> {
+
+            lower.contains("recharge") ||
+                    lower.contains("योजना") ||
+                    lower.contains("free") -> {
+
                 VerificationResponse(
                     id = 1,
                     verdict = "FALSE",
@@ -231,19 +407,31 @@ class ContextCheckRepository(
                         "Ministry of Electronics & IT Cyber Dost Advisory",
                         "TRAI Consumer Security Alert"
                     ),
-                    dateComparison = "Claimed: Current Active Scheme | Evidence: Recurring digital hoax since 2021",
-                    locationComparison = "Claimed: Pan-India | Evidence: Phishing cyber scam",
-                    contextComparison = "FALSE: Phishing scam falsely using government logos.",
+                    dateComparison =
+                        "Claimed: Current Active Scheme | Evidence: Recurring digital hoax since 2021",
+                    locationComparison =
+                        "Claimed: Pan-India | Evidence: Phishing cyber scam",
+                    contextComparison =
+                        "FALSE: Phishing scam falsely using government logos.",
                     recommendedAction = "DON'T FORWARD",
                     language = "English",
-                    entities = listOf("Organization: PIB, TRAI", "Currency: ₹500"),
-                    suspiciousSignals = listOf("Circulation pressure: Urgent claim with external link"),
+                    entities = listOf(
+                        "Organization: PIB, TRAI",
+                        "Currency: ₹500"
+                    ),
+                    suspiciousSignals = listOf(
+                        "Circulation pressure: Urgent claim with external link"
+                    ),
                     contentType = type,
                     isDemo = true,
                     timestamp = isoTimestamp
                 )
             }
-            lower.contains("holiday") || lower.contains("school") || lower.contains("सुट्टी") -> {
+
+            lower.contains("holiday") ||
+                    lower.contains("school") ||
+                    lower.contains("सुट्टी") -> {
+
                 VerificationResponse(
                     id = 3,
                     verdict = "UNVERIFIED",
@@ -258,19 +446,29 @@ class ContextCheckRepository(
                         "District Collector & Magistrate Official Portal (No Circulars Found)",
                         "Department of School Education Official Bulletin"
                     ),
-                    dateComparison = "Claimed: Tomorrow | Evidence: No scheduled shutdown",
-                    locationComparison = "Claimed: District Schools | Evidence: Unverified local claim",
-                    contextComparison = "UNVERIFIED: Circular claims lack official letterhead or reference number.",
+                    dateComparison =
+                        "Claimed: Tomorrow | Evidence: No scheduled shutdown",
+                    locationComparison =
+                        "Claimed: District Schools | Evidence: Unverified local claim",
+                    contextComparison =
+                        "UNVERIFIED: Circular claims lack official letterhead or reference number.",
                     recommendedAction = "WAIT FOR OFFICIAL CONFIRMATION",
                     language = "English",
-                    entities = listOf("Date: Tomorrow", "Organization: School Education Dept"),
-                    suspiciousSignals = listOf("Unverified circulating rumor"),
+                    entities = listOf(
+                        "Date: Tomorrow",
+                        "Organization: School Education Dept"
+                    ),
+                    suspiciousSignals = listOf(
+                        "Unverified circulating rumor"
+                    ),
                     contentType = type,
                     isDemo = true,
                     timestamp = isoTimestamp
                 )
             }
+
             else -> {
+
                 VerificationResponse(
                     id = 4,
                     verdict = "INCONCLUSIVE",
@@ -280,11 +478,17 @@ class ContextCheckRepository(
                         "Insufficient corroborating public records exist to verify or disprove this statement.",
                         "Always seek verification from official primary sources before sharing."
                     ),
-                    sources = listOf("Open Source Fact Index (No definitive match)"),
-                    dateComparison = "Date verification inconclusive",
-                    locationComparison = "Location verification inconclusive",
-                    contextComparison = "INCONCLUSIVE: Requires primary source corroboration.",
-                    recommendedAction = "WAIT FOR OFFICIAL CONFIRMATION",
+                    sources = listOf(
+                        "Open Source Fact Index (No definitive match)"
+                    ),
+                    dateComparison =
+                        "Date verification inconclusive",
+                    locationComparison =
+                        "Location verification inconclusive",
+                    contextComparison =
+                        "INCONCLUSIVE: Requires primary source corroboration.",
+                    recommendedAction =
+                        "WAIT FOR OFFICIAL CONFIRMATION",
                     language = "English",
                     entities = emptyList(),
                     suspiciousSignals = emptyList(),
@@ -297,8 +501,15 @@ class ContextCheckRepository(
     }
 
     private fun createDefaultDemoHistory(): List<HistoryItemResponse> {
-        val now = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())
+
+        val now =
+            SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss",
+                Locale.US
+            ).format(Date())
+
         return listOf(
+
             HistoryItemResponse(
                 id = 1,
                 contentType = "VIDEO",
@@ -308,12 +519,19 @@ class ContextCheckRepository(
                 recommendedAction = "DON'T FORWARD",
                 dateComparison = "Claimed: Today | Evidence: Sept 2019",
                 locationComparison = "Claimed: Pune | Evidence: Katraj, Pune (2019)",
-                contextComparison = "REAL MEDIA, FALSE CONTEXT: Genuine flood footage from 2019 re-captioned as today.",
-                evidence = listOf("Footage confirmed from Sept 2019 Katraj incident."),
-                sources = listOf("Disaster Management Bulletin", "Pune Met Centre"),
+                contextComparison =
+                    "REAL MEDIA, FALSE CONTEXT: Genuine flood footage from 2019 re-captioned as today.",
+                evidence = listOf(
+                    "Footage confirmed from Sept 2019 Katraj incident."
+                ),
+                sources = listOf(
+                    "Disaster Management Bulletin",
+                    "Pune Met Centre"
+                ),
                 timestamp = now,
                 isDemo = true
             ),
+
             HistoryItemResponse(
                 id = 2,
                 contentType = "TEXT",
@@ -323,12 +541,19 @@ class ContextCheckRepository(
                 recommendedAction = "DON'T FORWARD",
                 dateComparison = "Claimed: Current | Evidence: Debunked hoax",
                 locationComparison = "Claimed: All India | Evidence: Phishing",
-                contextComparison = "Phishing scam impersonating government scheme.",
-                evidence = listOf("PIB Fact Check confirmed no such scheme exists."),
-                sources = listOf("PIB Fact Check", "Cyber Dost"),
+                contextComparison =
+                    "Phishing scam impersonating government scheme.",
+                evidence = listOf(
+                    "PIB Fact Check confirmed no such scheme exists."
+                ),
+                sources = listOf(
+                    "PIB Fact Check",
+                    "Cyber Dost"
+                ),
                 timestamp = now,
                 isDemo = true
             ),
+
             HistoryItemResponse(
                 id = 3,
                 contentType = "TEXT",
@@ -338,9 +563,14 @@ class ContextCheckRepository(
                 recommendedAction = "WAIT FOR OFFICIAL CONFIRMATION",
                 dateComparison = "Claimed: Tomorrow | Evidence: No circular",
                 locationComparison = "Claimed: Local | Evidence: Uncorroborated",
-                contextComparison = "No signed department order found.",
-                evidence = listOf("No official circular issued by Education Department."),
-                sources = listOf("District Magistrate Portal"),
+                contextComparison =
+                    "No signed department order found.",
+                evidence = listOf(
+                    "No official circular issued by Education Department."
+                ),
+                sources = listOf(
+                    "District Magistrate Portal"
+                ),
                 timestamp = now,
                 isDemo = true
             )

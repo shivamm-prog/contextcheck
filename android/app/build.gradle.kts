@@ -20,7 +20,7 @@ android {
         }
 
         // Default local emulator base URL (can be customized via in-app Settings UI)
-        buildConfigField("String", "DEFAULT_API_BASE_URL", "\"http://10.0.2.2:8000/\"")
+        buildConfigField("String", "DEFAULT_API_BASE_URL", "\"http://10.69.125.79:8000/\"")
     }
 
     buildTypes {
