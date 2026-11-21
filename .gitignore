@@ -40,3 +40,4 @@ Thumbs.db
 backup/
 *.tmp
 *.log
+*.zip
