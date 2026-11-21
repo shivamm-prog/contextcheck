@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">ContextCheck</string>
+    <string name="tagline">Think Before You Believe. Verify Before You Share.</string>
+    
+    <!-- Accessibility Service Strings -->
+    <string name="accessibility_service_label">ContextCheck Forward Verification</string>
+    <string name="accessibility_service_description">Enables ContextCheck to provide quick one-tap verification for forwarded WhatsApp messages and media, checking both content and attached context without storing or continuously monitoring private messages.</string>
+    
+    <!-- Permissions Description -->
+    <string name="perm_accessibility_title">Context Verification Service</string>
+    <string name="perm_accessibility_desc">Allows ContextCheck to detect user-initiated message selection in WhatsApp and verify message context with a single tap.</string>
+    <string name="perm_overlay_title">Action Badge Overlay</string>
+    <string name="perm_overlay_desc">Displays the subtle ContextCheck verification pill on top of WhatsApp when a message is selected.</string>
+    <string name="perm_notification_title">Verification Alerts</string>
+    <string name="perm_notification_desc">Notifies you when deep context comparison and cross-referencing completes.</string>
+</resources>

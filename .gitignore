@@ -1,0 +1,42 @@
+# Gradle and Android build files
+.gradle/
+**/build/
+*.apk
+*.aab
+local.properties
+.cxx/
+captures/
+
+# Python and Testing
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment and Secrets
+.env
+*.env.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+contextcheck.db
+
+# IDE and Editor
+.idea/
+.vscode/
+*.iml
+.project
+.settings/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Backup and temp files
+backup/
+*.tmp
+*.log

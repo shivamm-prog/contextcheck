@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="sage_green">#668F7A</color>
+    <color name="warm_white">#F8FAF7</color>
+    <color name="dark_charcoal">#26332D</color>
+    <color name="soft_mint">#DCEBE2</color>
+
+    <!-- Harmonized Status Tints -->
+    <color name="verdict_false">#BA4A4A</color>
+    <color name="verdict_misleading">#C27D38</color>
+    <color name="verdict_unverified">#6F8378</color>
+    <color name="verdict_supported">#4C7A62</color>
+</resources>
